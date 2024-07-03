@@ -10,11 +10,6 @@ class Meshtastic::Connection
     @event_handlers = Hash.new { |hash, key| hash[key] = [] }
   end
 
-  def monitor
-    @rx_thread.join if @rx_thread
-    @tx_thread.join if @tx_thread
-  end
-
   def send_to_radio(to_radio)
     raise NotImplementedError
   end
@@ -42,19 +37,5 @@ class Meshtastic::Connection
 
   def decode_packet(packet)
     Meshtastic::FromRadio.decode(@receive_buffer[HEADER_LEN..].pack("C*"))
-  end
-
-  def process_send_queue
-    @send_mutex.synchronize do
-      unless to_radio = @send_queue.shift
-        @send_observer.wait(@send_mutex)
-        return
-      end
-
-      packet = encode_packet(to_radio)
-      serialport.write(packet)
-
-      @send_observer.signal if @send_queue.any?
-    end
   end
 end

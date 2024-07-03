@@ -80,7 +80,6 @@ class Meshtastic::Connection::Serial < Meshtastic::Connection
       end
 
       packet = encode_packet(from_radio)
-
       @serialport.write(packet)
     end
   end

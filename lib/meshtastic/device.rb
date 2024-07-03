@@ -13,7 +13,8 @@ class Meshtastic::Device
     @config_complete = false
     @local_config = {}
     @event_handlers = Hash.new { |hash, key| hash[key] = [] }
-    @instances = {}
+    @acks = Set.new
+    @acks_monitor = Monitor.new
 
     connection.on(:from_radio, lambda { |from_radio|
       handle_from_radio(from_radio)
@@ -60,6 +61,36 @@ class Meshtastic::Device
       portnum: Meshtastic::PortNum::TEXT_MESSAGE_APP,
       destination: destination
     )
+  end
+
+  def send_packet(payload:, portnum:, destination:, channel: 0, hop_limit: nil, want_ack: true, want_response: false)
+    packet = Meshtastic::MeshPacket.new
+
+    packet.decoded = Meshtastic::Data.new(
+      payload: payload,
+      portnum: portnum,
+      want_response: want_response
+    )
+    packet.from = node_num
+    packet.to = destination
+    packet.id = generate_packet_id
+    packet.want_ack = want_ack
+    packet.channel = channel
+    packet.hop_limit = hop_limit || config[:lora]&.hop_limit || 3
+
+    to_radio = Meshtastic::ToRadio.new
+
+    to_radio.packet = packet
+
+    if want_ack
+      Thread.new do
+        send_with_ack(to_radio)
+      end
+
+      return
+    end
+
+    @connection.send_to_radio(to_radio)
   end
 
   private
@@ -115,31 +146,43 @@ class Meshtastic::Device
       @channels[channel.index] = channel
     when :config_complete_id
       @config_complete = from_radio.config_complete_id == @config_id
+    when :packet
+      packet = from_radio.packet
+
+      return unless packet.payload_variant == :decoded
+      return unless packet.channel == 0 && packet.to == node_num
+
+      case packet.decoded.portnum
+      when :ROUTING_APP
+        @acks_monitor.synchronize do
+          @acks << packet.decoded.request_id.to_i
+        end
+      end
     end
-  end
-
-  def send_packet(payload:, portnum:, destination:, channel: 0, want_ack: true, want_response: false)
-    packet = Meshtastic::MeshPacket.new
-
-    packet.decoded = Meshtastic::Data.new(
-      payload: payload,
-      portnum: portnum,
-      want_response: want_response
-    )
-    packet.from = node_num
-    packet.to = destination
-    packet.id = generate_packet_id
-    packet.want_ack = want_ack
-    packet.channel = channel
-
-    to_radio = Meshtastic::ToRadio.new
-
-    to_radio.packet = packet
-
-    @connection.send_to_radio(to_radio)
   end
 
   def generate_packet_id
     @current_packet_id = rand(0..0xFFFFFFFF)
+  end
+
+  def send_with_ack(to_radio)
+    attempt = 0
+
+    until attempt == 5
+      @connection.send_to_radio(to_radio)
+
+      5.times do
+        sleep 1
+
+        @acks_monitor.synchronize do
+          if @acks.include?(to_radio.packet.id)
+            @acks.delete(to_radio.packet.id)
+            return
+          end
+        end
+      end
+
+      attempt += 1
+    end
   end
 end
