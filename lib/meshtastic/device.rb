@@ -77,6 +77,7 @@ class Meshtastic::Device
     packet.want_ack = want_ack
     packet.channel = channel
     packet.hop_limit = hop_limit || config[:lora]&.hop_limit || 3
+    packet.hop_start = packet.hop_limit
 
     to_radio = Meshtastic::ToRadio.new
 
