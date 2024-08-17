@@ -53,17 +53,18 @@ class Meshtastic::Device
     )
   end
 
-  def send_message(data, destination:)
+  def send_message(data, destination:, immediate: false)
     return unless data
 
     send_packet(
       payload: data[0..227],
       portnum: Meshtastic::PortNum::TEXT_MESSAGE_APP,
-      destination: destination
+      destination: destination,
+      immediate: immediate
     )
   end
 
-  def send_packet(payload:, portnum:, destination:, channel: 0, hop_limit: nil, want_ack: true, want_response: false)
+  def send_packet(payload:, portnum:, destination:, channel: 0, hop_limit: nil, want_ack: true, want_response: false, immediate: false)
     packet = Meshtastic::MeshPacket.new
 
     packet.decoded = Meshtastic::Data.new(
@@ -85,13 +86,13 @@ class Meshtastic::Device
 
     if want_ack
       Thread.new do
-        send_with_ack(to_radio)
+        send_with_ack(to_radio, immediate: immediate)
       end
 
       return
     end
 
-    @connection.send_to_radio(to_radio)
+    @connection.send_to_radio(to_radio, immediate: immediate)
   end
 
   private
@@ -166,11 +167,11 @@ class Meshtastic::Device
     @current_packet_id = rand(0..0xFFFFFFFF)
   end
 
-  def send_with_ack(to_radio)
+  def send_with_ack(to_radio, immediate: false)
     attempt = 0
 
     until attempt == 5
-      @connection.send_to_radio(to_radio)
+      @connection.send_to_radio(to_radio, immediate: immediate)
 
       5.times do
         sleep 1

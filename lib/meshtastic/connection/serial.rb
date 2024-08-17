@@ -29,10 +29,14 @@ class Meshtastic::Connection::Serial < Meshtastic::Connection
     end
   end
 
-  def send_to_radio(to_radio)
+  def send_to_radio(to_radio, immediate: false)
     @send_mutex.synchronize do
-      @send_queue << to_radio
-      @send_observer.signal
+      if immediate
+        write_packet(to_radio)
+      else
+        @send_queue << to_radio
+        @send_observer.signal
+      end
     end
   end
 
@@ -74,13 +78,17 @@ class Meshtastic::Connection::Serial < Meshtastic::Connection
 
   def process_send_queue
     @send_mutex.synchronize do
-      unless from_radio = @send_queue.shift
+      unless to_radio = @send_queue.shift
         @send_observer.wait(@send_mutex)
         return
       end
 
-      packet = encode_packet(from_radio)
-      @serialport.write(packet)
+      write_packet(to_radio)
     end
+  end
+
+  def write_packet(to_radio)
+    packet = encode_packet(to_radio)
+    @serialport.write(packet)
   end
 end
