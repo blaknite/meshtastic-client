@@ -5,6 +5,8 @@ require "base64"
 class Meshtastic::Device
   attr_reader :nodes
 
+  BROADCAST = 0xffffffff
+
   def initialize(connection:)
     @connection = connection
     @my_info = nil
@@ -73,7 +75,14 @@ class Meshtastic::Device
       want_response: want_response
     )
     packet.from = node_num
-    packet.to = destination
+    packet.to = case destination
+                when "broadcast"
+                  BROADCAST
+                when "self"
+                  node_num
+                else
+                  destination
+                end
     packet.id = generate_packet_id
     packet.want_ack = want_ack
     packet.channel = channel
